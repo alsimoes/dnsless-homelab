@@ -1,0 +1,16 @@
+# dnsless-client configuration example
+# Copy to client.toml and adjust as needed.
+
+# Hostname or IP address of the dnsless server.
+server_host = "192.168.1.100"
+
+# TCP port of the dnsless server.
+server_port = 5353
+
+# Path to the hosts file.
+# Linux default:   /etc/hosts
+# Windows default: C:\Windows\System32\drivers\etc\hosts
+# hosts_file = "/etc/hosts"
+
+# Seconds to wait between reconnection attempts.
+reconnect_delay_secs = 10

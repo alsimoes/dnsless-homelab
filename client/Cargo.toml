@@ -1,0 +1,19 @@
+[package]
+name = "dnsless-client"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "dnsless-client"
+path = "src/main.rs"
+
+[dependencies]
+dnsless-common = { path = "../common" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+log = "0.4"
+env_logger = "0.11"
+
+[dev-dependencies]
+tempfile = "3"
