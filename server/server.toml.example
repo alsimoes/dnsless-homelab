@@ -1,0 +1,15 @@
+# dnsless-server configuration example
+# Copy to server.toml and adjust as needed.
+
+# The hostname clients will associate with this machine.
+hostname = "myserver.home"
+
+# TCP port to listen on.  Clients must use the same port.
+port = 5353
+
+# Network interface to monitor for IP changes.
+# Leave empty to auto-detect the first non-loopback IPv4 interface.
+# interface = "eth0"
+
+# How often (in seconds) to check for IP changes.
+poll_interval_secs = 30
