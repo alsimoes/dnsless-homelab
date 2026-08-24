@@ -139,6 +139,10 @@ jobs:
         run: cargo install cross --git https://github.com/cross-rs/cross
       - name: Build
         run: cross build --release --target aarch64-unknown-linux-gnu -p dnsless-server
+      - name: Strip
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq binutils-aarch64-linux-gnu
+          aarch64-linux-gnu-strip target/aarch64-unknown-linux-gnu/release/dnsless-server
       - name: Stage
         run: |
           set -eu
@@ -174,6 +178,10 @@ jobs:
         run: cargo install cross --git https://github.com/cross-rs/cross
       - name: Build
         run: cross build --release --target armv7-unknown-linux-gnueabihf -p dnsless-server
+      - name: Strip
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq binutils-arm-linux-gnueabihf
+          arm-linux-gnueabihf-strip target/armv7-unknown-linux-gnueabihf/release/dnsless-server
       - name: Stage
         run: |
           set -eu
