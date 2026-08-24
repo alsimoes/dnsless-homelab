@@ -1,19 +1,23 @@
 # Build and publish release binaries for dnsless-homelab.
 #
 # Triggers:
-#   - push of a tag matching `v*`           → builds + attaches to that release
-#   - workflow_dispatch (manual run)        → pass the tag name to (re)build an existing release
+#   - push of a tag matching `v*`           -> builds + attaches to that release
+#   - workflow_dispatch (manual run)        -> pass the tag name to (re)build an existing release
 #
 # Produces, per target:
-#   linux   x86_64  → dnsless-server, dnsless-client, dnsless-ui   (.tar.gz)
-#   windows x86_64  → dnsless-client.exe, dnsless-ui.exe            (.zip)
-#   linux   aarch64 → dnsless-server                                (.tar.gz)   [Raspberry Pi 4/5, OS 64-bit]
-#   linux   armv7   → dnsless-server                                (.tar.gz)   [Raspberry Pi 3/4, OS 32-bit Legacy]
+#   linux   x86_64  -> dnsless-server, dnsless-client, dnsless-ui, dnsless-desktop + web UI (.tar.gz)
+#   windows x86_64  -> dnsless-client.exe, dnsless-ui.exe, dnsless-desktop.exe   (.zip)
+#   linux   aarch64 -> dnsless-server + web UI                                   (.tar.gz)  [Pi 4/5, OS 64-bit]
+#   linux   armv7   -> dnsless-server + web UI                                   (.tar.gz)  [Pi 3/4, OS 32-bit Legacy]
+#
+# The WASM web UI (`dnsless-web`) is built once by the `build-web` job and its
+# artifact (`web/index.html` + `web/pkg/`) is bundled next to every shipped
+# `dnsless-server`, which serves it from `web_assets_dir` (default `web`).
 #
 # The ARM builds use `cross` (Docker) so the native C linker is provided.
-# Each target job uploads its archive as a build artifact; the final
-# `release` job downloads them all and attaches them to the GitHub
-# release matching the tag (creating the release first if needed).
+# The Linux x86_64 job installs the GTK/AppIndicator dev packages required by
+# `dnsless-desktop` (tray-icon). Each target job uploads its archive as a
+# build artifact; the final `release` job attaches them to the GitHub release.
 
 name: release
 
@@ -50,9 +54,35 @@ jobs:
             echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
           fi
 
+  # ---------------------------------------------------------------- web UI (wasm)
+  # Build the dnsless-web WASM bundle once; server jobs bundle it as ./web/.
+  build-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Install wasm-pack
+        run: cargo install wasm-pack
+      - name: Build WASM bundle
+        run: wasm-pack build web --target web
+      - name: Stage web UI
+        run: |
+          set -eu
+          mkdir -p stage/web-ui
+          cp web/index.html stage/web-ui/
+          cp -r web/pkg stage/web-ui/pkg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-ui
+          path: stage/web-ui
+          if-no-files-found: error
+
   # ---------------------------------------------------------------- linux x86_64
   build-linux-x86_64:
-    needs: tag
+    needs: [tag, build-web]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -60,22 +90,39 @@ jobs:
         with:
           targets: x86_64-unknown-linux-gnu
       - uses: Swatinem/rust-cache@v2
+      - name: Install system deps (tray-icon / GTK)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libgtk-3-dev libayatana-appindicator3-dev libdbusmenu-gtk3-dev
+      - name: Download web UI
+        uses: actions/download-artifact@v4
+        with:
+          name: web-ui
+          path: web-ui
       - name: Build
-        run: cargo build --release -p dnsless-server -p dnsless-client -p dnsless-ui
+        run: cargo build --release -p dnsless-server -p dnsless-client -p dnsless-ui -p dnsless-desktop
       - name: Strip
-        run: strip target/release/dnsless-server target/release/dnsless-client target/release/dnsless-ui
+        run: strip target/release/dnsless-server target/release/dnsless-client target/release/dnsless-ui target/release/dnsless-desktop
       - name: Stage
         run: |
           set -eu
           name="dnsless-homelab-${{ needs.tag.outputs.tag }}-x86_64-linux"
-          mkdir -p "stage/$name"
-          cp target/release/dnsless-server target/release/dnsless-client target/release/dnsless-ui "stage/$name/"
+          mkdir -p "stage/$name/web"
+          cp target/release/dnsless-server target/release/dnsless-client target/release/dnsless-ui target/release/dnsless-desktop "stage/$name/"
           cp server/server.toml.example client/client.toml.example README.md LICENSE "stage/$name/"
+          cp -r web-ui/index.html web-ui/pkg "stage/$name/web/"
           cat > "stage/$name/INSTALL.md" <<'INSTALL'
           # dnsless-homelab — Linux x86_64 bundle
 
-          Pre-built binaries for Linux x86_64. Run `dnsless-ui` from a graphical
-          session. `dnsless-client` requires root to write /etc/hosts.
+          Pre-built binaries for Linux x86_64.
+
+          - `dnsless-desktop` (system tray app, Windows-style close-to-tray)
+            requires gtk3 and libappindicator (or libayatana-appindicator) at
+            runtime:
+            - Arch:      pacman -S gtk3 libappindicator-gtk3 (or libayatana-appindicator)
+            - Debian/Ubuntu: apt install libgtk-3-0 libayatana-appindicator3-1
+          - `dnsless-client` requires root to write /etc/hosts.
+          - `dnsless-server` serves the admin web UI from ./web (default
+            web_assets_dir = "web"): open http://<server>:8081 and the /events
+            WebSocket stream is at ws://<server>:8080/events.
 
           See README.md for configuration and usage.
           INSTALL
@@ -97,7 +144,7 @@ jobs:
           targets: x86_64-pc-windows-msvc
       - uses: Swatinem/rust-cache@v2
       - name: Build
-        run: cargo build --release -p dnsless-client -p dnsless-ui
+        run: cargo build --release -p dnsless-client -p dnsless-ui -p dnsless-desktop
       - name: Stage
         shell: pwsh
         run: |
@@ -106,6 +153,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path "stage/$name" | Out-Null
           Copy-Item target/release/dnsless-client.exe "stage/$name/"
           Copy-Item target/release/dnsless-ui.exe "stage/$name/"
+          Copy-Item target/release/dnsless-desktop.exe "stage/$name/"
           Copy-Item server/server.toml.example "stage/$name/"
           Copy-Item client/client.toml.example "stage/$name/"
           Copy-Item README.md "stage/$name/"
@@ -113,9 +161,14 @@ jobs:
           Set-Content -Path "stage/$name/INSTALL.md" -Value @'
           # dnsless-homelab - Windows x86_64 bundle
 
-          Pre-built binaries for Windows x86_64. Run `dnsless-ui.exe` from a graphical
-          session. `dnsless-client.exe` must be run as Administrator to write
-          C:\Windows\System32\drivers\etc\hosts.
+          Pre-built binaries for Windows x86_64.
+
+          - `dnsless-desktop.exe` is the system tray app (no console window);
+            right-click the tray icon for Show/Hide/Quit.
+          - `dnsless-client.exe` must be run as Administrator to write
+            C:\Windows\System32\drivers\etc\hosts.
+          - `dnsless-ui.exe` is the legacy monolith dashboard (server+client
+            in one window).
 
           See README.md for configuration and usage.
           '@
@@ -130,7 +183,7 @@ jobs:
   # musl (statically linked) has no glibc dependency, so the binary runs on
   # any aarch64 Linux including Raspberry Pi OS bullseye (glibc 2.31).
   build-linux-aarch64:
-    needs: tag
+    needs: [tag, build-web]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -139,6 +192,11 @@ jobs:
           targets: aarch64-unknown-linux-musl
       - name: Install cross
         run: cargo install cross --git https://github.com/cross-rs/cross
+      - name: Download web UI
+        uses: actions/download-artifact@v4
+        with:
+          name: web-ui
+          path: web-ui
       - name: Build
         run: cross build --release --target aarch64-unknown-linux-musl -p dnsless-server
       - name: Strip
@@ -149,15 +207,20 @@ jobs:
         run: |
           set -eu
           name="dnsless-homelab-${{ needs.tag.outputs.tag }}-server-aarch64-linux"
-          mkdir -p "stage/$name"
+          mkdir -p "stage/$name/web"
           cp target/aarch64-unknown-linux-musl/release/dnsless-server "stage/$name/"
           cp server/server.toml.example README.md LICENSE "stage/$name/"
+          cp -r web-ui/index.html web-ui/pkg "stage/$name/web/"
           cat > "stage/$name/INSTALL.md" <<'INSTALL'
           # dnsless-homelab — server, Linux aarch64 bundle (Raspberry Pi 4/5, OS 64-bit)
 
           Pre-built dnsless-server for Linux aarch64, statically linked against
           musl (no glibc dependency). Runs on any aarch64 Linux, including
           Raspberry Pi OS bullseye (glibc 2.31) and older.
+
+          The admin web UI is bundled in ./web (default web_assets_dir = "web"):
+          open http://<pi>:8081 and the /events WebSocket stream is at
+          ws://<pi>:8080/events.
 
           See README.md for configuration and usage.
           INSTALL
@@ -170,7 +233,7 @@ jobs:
 
   # ---------------------------------------------------------------- linux armv7 (Pi 3/4, OS 32-bit Legacy) — musl static via cross
   build-linux-armv7:
-    needs: tag
+    needs: [tag, build-web]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -179,6 +242,11 @@ jobs:
           targets: armv7-unknown-linux-musleabihf
       - name: Install cross
         run: cargo install cross --git https://github.com/cross-rs/cross
+      - name: Download web UI
+        uses: actions/download-artifact@v4
+        with:
+          name: web-ui
+          path: web-ui
       - name: Build
         run: cross build --release --target armv7-unknown-linux-musleabihf -p dnsless-server
       - name: Strip
@@ -189,15 +257,20 @@ jobs:
         run: |
           set -eu
           name="dnsless-homelab-${{ needs.tag.outputs.tag }}-server-armv7-linux"
-          mkdir -p "stage/$name"
+          mkdir -p "stage/$name/web"
           cp target/armv7-unknown-linux-musleabihf/release/dnsless-server "stage/$name/"
           cp server/server.toml.example README.md LICENSE "stage/$name/"
+          cp -r web-ui/index.html web-ui/pkg "stage/$name/web/"
           cat > "stage/$name/INSTALL.md" <<'INSTALL'
           # dnsless-homelab — server, Linux armv7 bundle (Raspberry Pi 3/4, OS 32-bit Legacy)
 
           Pre-built dnsless-server for Linux armv7 (hard-float), statically
           linked against musl (no glibc dependency). Runs on any armv7 Linux,
           including Raspberry Pi OS bullseye (glibc 2.31) and older.
+
+          The admin web UI is bundled in ./web (default web_assets_dir = "web"):
+          open http://<pi>:8081 and the /events WebSocket stream is at
+          ws://<pi>:8080/events.
 
           See README.md for configuration and usage.
           INSTALL
