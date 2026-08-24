@@ -68,7 +68,7 @@ jobs:
         run: |
           set -eu
           name="dnsless-homelab-${{ needs.tag.outputs.tag }}-x86_64-linux"
-          mkdir "stage/$name"
+          mkdir -p "stage/$name"
           cp target/release/dnsless-server target/release/dnsless-client target/release/dnsless-ui "stage/$name/"
           cp server/server.toml.example client/client.toml.example README.md LICENSE "stage/$name/"
           cat > "stage/$name/INSTALL.md" <<'INSTALL'
