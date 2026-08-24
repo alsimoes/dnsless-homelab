@@ -1,0 +1,240 @@
+# Build and publish release binaries for dnsless-homelab.
+#
+# Triggers:
+#   - push of a tag matching `v*`           → builds + attaches to that release
+#   - workflow_dispatch (manual run)        → pass the tag name to (re)build an existing release
+#
+# Produces, per target:
+#   linux   x86_64  → dnsless-server, dnsless-client, dnsless-ui   (.tar.gz)
+#   windows x86_64  → dnsless-client.exe, dnsless-ui.exe            (.zip)
+#   linux   aarch64 → dnsless-server                                (.tar.gz)   [Raspberry Pi 4/5, OS 64-bit]
+#   linux   armv7   → dnsless-server                                (.tar.gz)   [Raspberry Pi 3/4, OS 32-bit Legacy]
+#
+# The ARM builds use `cross` (Docker) so the native C linker is provided.
+# Each target job uploads its archive as a build artifact; the final
+# `release` job downloads them all and attaches them to the GitHub
+# release matching the tag (creating the release first if needed).
+
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to (re)build and attach binaries to"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  # Resolve the tag we are building for, regardless of trigger.
+  tag:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.set.outputs.tag }}
+    steps:
+      - id: set
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ---------------------------------------------------------------- linux x86_64
+  build-linux-x86_64:
+    needs: tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release -p dnsless-server -p dnsless-client -p dnsless-ui
+      - name: Strip
+        run: strip target/release/dnsless-server target/release/dnsless-client target/release/dnsless-ui
+      - name: Stage
+        run: |
+          set -eu
+          name="dnsless-homelab-${{ needs.tag.outputs.tag }}-x86_64-linux"
+          mkdir "stage/$name"
+          cp target/release/dnsless-server target/release/dnsless-client target/release/dnsless-ui "stage/$name/"
+          cp server/server.toml.example client/client.toml.example README.md LICENSE "stage/$name/"
+          cat > "stage/$name/INSTALL.md" <<'INSTALL'
+          # dnsless-homelab — Linux x86_64 bundle
+
+          Pre-built binaries for Linux x86_64. Run `dnsless-ui` from a graphical
+          session. `dnsless-client` requires root to write /etc/hosts.
+
+          See README.md for configuration and usage.
+          INSTALL
+          tar -C stage -czf "$name.tar.gz" "$name"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-x86_64
+          path: "*.tar.gz"
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------- windows x86_64
+  build-windows-x86_64:
+    needs: tag
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release -p dnsless-client -p dnsless-ui
+      - name: Stage
+        shell: pwsh
+        run: |
+          $tag = "${{ needs.tag.outputs.tag }}"
+          $name = "dnsless-homelab-$tag-x86_64-windows"
+          New-Item -ItemType Directory -Force -Path "stage/$name" | Out-Null
+          Copy-Item target/release/dnsless-client.exe "stage/$name/"
+          Copy-Item target/release/dnsless-ui.exe "stage/$name/"
+          Copy-Item server/server.toml.example "stage/$name/"
+          Copy-Item client/client.toml.example "stage/$name/"
+          Copy-Item README.md "stage/$name/"
+          Copy-Item LICENSE "stage/$name/"
+          Set-Content -Path "stage/$name/INSTALL.md" -Value @'
+          # dnsless-homelab - Windows x86_64 bundle
+
+          Pre-built binaries for Windows x86_64. Run `dnsless-ui.exe` from a graphical
+          session. `dnsless-client.exe` must be run as Administrator to write
+          C:\Windows\System32\drivers\etc\hosts.
+
+          See README.md for configuration and usage.
+          '@
+          Compress-Archive -DestinationPath "$name.zip" -Path "stage/$name"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x86_64
+          path: "*.zip"
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------- linux aarch64 (Pi 4/5, OS 64-bit) — via cross
+  build-linux-aarch64:
+    needs: tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+      - name: Install cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+      - name: Build
+        run: cross build --release --target aarch64-unknown-linux-gnu -p dnsless-server
+      - name: Stage
+        run: |
+          set -eu
+          name="dnsless-homelab-${{ needs.tag.outputs.tag }}-server-aarch64-linux"
+          mkdir -p "stage/$name"
+          cp target/aarch64-unknown-linux-gnu/release/dnsless-server "stage/$name/"
+          cp server/server.toml.example README.md LICENSE "stage/$name/"
+          cat > "stage/$name/INSTALL.md" <<'INSTALL'
+          # dnsless-homelab — server, Linux aarch64 bundle (Raspberry Pi 4/5, OS 64-bit)
+
+          Pre-built dnsless-server for Linux aarch64. Run on the Pi that should
+          announce its IP to clients.
+
+          See README.md for configuration and usage.
+          INSTALL
+          tar -C stage -czf "$name.tar.gz" "$name"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-aarch64
+          path: "*.tar.gz"
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------- linux armv7 (Pi 3/4, OS 32-bit Legacy) — via cross
+  build-linux-armv7:
+    needs: tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: armv7-unknown-linux-gnueabihf
+      - name: Install cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+      - name: Build
+        run: cross build --release --target armv7-unknown-linux-gnueabihf -p dnsless-server
+      - name: Stage
+        run: |
+          set -eu
+          name="dnsless-homelab-${{ needs.tag.outputs.tag }}-server-armv7-linux"
+          mkdir -p "stage/$name"
+          cp target/armv7-unknown-linux-gnueabihf/release/dnsless-server "stage/$name/"
+          cp server/server.toml.example README.md LICENSE "stage/$name/"
+          cat > "stage/$name/INSTALL.md" <<'INSTALL'
+          # dnsless-homelab — server, Linux armv7 bundle (Raspberry Pi 3/4, OS 32-bit Legacy)
+
+          Pre-built dnsless-server for Linux armv7 (hard-float). Run on the Pi that
+          should announce its IP to clients.
+
+          See README.md for configuration and usage.
+          INSTALL
+          tar -C stage -czf "$name.tar.gz" "$name"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-armv7
+          path: "*.tar.gz"
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------- release
+  release:
+    needs:
+      - tag
+      - build-linux-x86_64
+      - build-windows-x86_64
+      - build-linux-aarch64
+      - build-linux-armv7
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: assets
+      - name: Flatten
+        run: |
+          set -eu
+          mkdir -p flat
+          find assets -type f \( -name '*.tar.gz' -o -name '*.zip' \) -exec cp {} flat/ \;
+          ls -la flat/
+      - name: Compute checksums
+        run: |
+          cd flat
+          sha256sum *.tar.gz *.zip > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          tag="${{ needs.tag.outputs.tag }}"
+          # Ensure the release exists (no-op if already present).
+          gh release create "$tag" \
+            --title "$tag" \
+            --generate-notes \
+            --prerelease \
+            --target main \
+            || gh release view "$tag" --json url >/dev/null
+          # Attach / overwrite the assets. --clobber replaces existing files
+          # with the same name, so re-runs refresh stale binaries.
+          gh release upload "$tag" flat/*.tar.gz flat/*.zip flat/SHA256SUMS.txt --clobber
