@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>dnsless-homelab — server</title>
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; background: #1a1a1a; }
+    #egui_canvas { width: 100vw; height: 100vh; display: block; }
+  </style>
+</head>
+<body>
+  <canvas id="egui_canvas"></canvas>
+  <script type="module">
+    import init from "./pkg/dnsless_web.js";
+    await init();
+  </script>
+</body>
+</html>

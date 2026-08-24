@@ -3,8 +3,7 @@
 //! No I/O, no egui — exhaustively match every variant so the compiler
 //! forces an update whenever the event enums grow.
 
-use dnsless_client::ClientEvent;
-use dnsless_server::ServerEvent;
+use dnsless_common::{ClientEvent, ServerEvent};
 
 use crate::state::{LogEntry, LogKind};
 
@@ -90,8 +89,9 @@ pub fn client_event_to_log_entry(ev: &ClientEvent) -> LogEntry {
 }
 
 fn now_str() -> String {
-    use chrono::Local;
-    Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
+    // UTC is used (rather than `Local`) so this compiles and runs on wasm32,
+    // where the local timezone is not available.
+    chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
 // A tiny helper used only by tests to assert socket formatting.

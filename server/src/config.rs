@@ -26,6 +26,18 @@ pub struct ServerConfig {
     /// Defaults to `30`.
     #[serde(default = "default_poll_interval")]
     pub poll_interval_secs: u64,
+
+    /// Port for the admin HTTP + WebSocket server (serves the WASM web UI
+    /// and pushes [`crate::ServerEvent`]s to connected browsers).
+    /// Set to `0` to disable the admin server.  Defaults to `8080`.
+    #[serde(default = "default_admin_port")]
+    pub admin_port: u16,
+
+    /// Directory containing the web UI assets (`index.html` and `pkg/*`),
+    /// served by the admin HTTP server.  Defaults to `"web"` (the output
+    /// directory of the `dnsless-web` crate).
+    #[serde(default = "default_web_assets_dir")]
+    pub web_assets_dir: String,
 }
 
 fn default_port() -> u16 {
@@ -34,6 +46,14 @@ fn default_port() -> u16 {
 
 fn default_poll_interval() -> u64 {
     30
+}
+
+fn default_admin_port() -> u16 {
+    8080
+}
+
+fn default_web_assets_dir() -> String {
+    "web".into()
 }
 
 impl ServerConfig {
@@ -52,6 +72,8 @@ impl Default for ServerConfig {
             port: default_port(),
             interface: String::new(),
             poll_interval_secs: default_poll_interval(),
+            admin_port: default_admin_port(),
+            web_assets_dir: default_web_assets_dir(),
         }
     }
 }
@@ -65,6 +87,8 @@ mod tests {
         let cfg = ServerConfig::default();
         assert_eq!(cfg.port, 5353);
         assert_eq!(cfg.poll_interval_secs, 30);
+        assert_eq!(cfg.admin_port, 8080);
+        assert_eq!(cfg.web_assets_dir, "web");
     }
 
     #[test]
@@ -74,11 +98,15 @@ hostname = "nas.home"
 port = 9000
 interface = "eth0"
 poll_interval_secs = 60
+admin_port = 9001
+web_assets_dir = "/srv/dnsless/web"
 "#;
         let cfg: ServerConfig = toml::from_str(toml).unwrap();
         assert_eq!(cfg.hostname, "nas.home");
         assert_eq!(cfg.port, 9000);
         assert_eq!(cfg.interface, "eth0");
         assert_eq!(cfg.poll_interval_secs, 60);
+        assert_eq!(cfg.admin_port, 9001);
+        assert_eq!(cfg.web_assets_dir, "/srv/dnsless/web");
     }
 }

@@ -13,3 +13,12 @@ port = 5353
 
 # How often (in seconds) to check for IP changes.
 poll_interval_secs = 30
+
+# Admin web UI.
+#   - admin_port (default 8080) exposes the /events WebSocket stream that
+#     pushes real-time events to the browser.
+#   - admin_port + 1 (default 8081) serves the static WASM web UI.
+#   - web_assets_dir points at the dnsless-web build output (index.html + pkg/).
+# Set admin_port = 0 to disable the admin server entirely.
+admin_port = 8080
+web_assets_dir = "web"

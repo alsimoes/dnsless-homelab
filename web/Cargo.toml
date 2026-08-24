@@ -1,0 +1,22 @@
+[package]
+name = "dnsless-web"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
+
+[dependencies]
+dnsless-common = { path = "../common" }
+dnsless-ui     = { path = "../ui" }
+serde_json     = "1"
+eframe        = { version = "0.29", default-features = false, features = ["default_fonts", "glow", "web_screen_reader"] }
+egui          = "0.29"
+wasm-bindgen  = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys       = { version = "0.3", features = ["WebSocket","MessageEvent","ErrorEvent","Location","HtmlCanvasElement","Document","Window"] }
+js-sys        = "0.3"
+log           = "0.4"
+console_error_panic_hook = "0.1"
+console_log   = "1"

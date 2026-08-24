@@ -4,5 +4,6 @@ members = [
     "server",
     "client",
     "ui",
+    "web",
 ]
 resolver = "2"

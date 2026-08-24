@@ -1,12 +1,10 @@
 //! Observable UI state, mutated by events drained from the channels.
 //!
-//! The structs here are owned by [`crate::app::DnslessUiApp`] and read by
-//! [`crate::views`].  They contain no `egui` types and perform no I/O, so
-//! they are unit-testable without a window or a socket.
+//! The structs here are owned by the UI app and read by [`crate::views`].
+//! They contain no `egui` types and perform no I/O, so they are
+//! unit-testable without a window or a socket.
 
-use dnsless_client::ClientEvent;
-use dnsless_server::config::ServerConfig;
-use dnsless_server::ServerEvent;
+use dnsless_common::{ClientEvent, ServerEvent};
 
 use crate::event::{client_event_to_log_entry, server_event_to_log_entry};
 
@@ -69,11 +67,15 @@ pub struct ClientState {
 }
 
 impl ServerState {
-    pub fn new(cfg: &ServerConfig) -> Self {
+    /// Build an empty server state seeded with the configured identity.
+    ///
+    /// Takes plain strings (not `ServerConfig`) so this module stays
+    /// wasm-safe — the web UI has no server-side config object.
+    pub fn new(hostname: String, interface: String) -> Self {
         Self {
             bind_addr: None,
-            interface: cfg.interface.clone(),
-            hostname: cfg.hostname.clone(),
+            interface,
+            hostname,
             current_ip: None,
             connected_clients: Vec::new(),
             ip_history: Vec::new(),
@@ -118,9 +120,12 @@ impl ServerState {
                 let extra = self.ip_history.len().saturating_sub(LOG_CAPACITY);
                 self.ip_history.drain(0..extra);
             }
-            ServerEvent::HeartbeatSent
-            | ServerEvent::PollUnchanged { .. }
-            | ServerEvent::Error { .. } => {}
+            ServerEvent::HeartbeatSent | ServerEvent::Error { .. } => {}
+            ServerEvent::PollUnchanged { ip } => {
+                // The IP is unchanged but still current; a browser that
+                // connected after startup learns the address from here.
+                self.current_ip = Some(ip);
+            }
         }
         self.push_log(entry);
     }
@@ -133,10 +138,14 @@ impl ServerState {
 }
 
 impl ClientState {
-    pub fn new(cfg: &dnsless_client::config::ClientConfig) -> Self {
+    /// Build an empty client state seeded with the configured identity.
+    ///
+    /// Takes plain strings (not `ClientConfig`) so this module stays
+    /// wasm-safe.
+    pub fn new(server_addr: String, hosts_file: String) -> Self {
         Self {
-            server_addr: Some(format!("{}:{}", cfg.server_host, cfg.server_port)),
-            hosts_file: cfg.hosts_file.clone(),
+            server_addr: Some(server_addr),
+            hosts_file,
             connected: false,
             last_update: None,
             update_history: Vec::new(),
@@ -199,13 +208,11 @@ mod tests {
     }
 
     fn server_state() -> ServerState {
-        let cfg = ServerConfig::default();
-        ServerState::new(&cfg)
+        ServerState::new("server.home".into(), String::new())
     }
 
     fn client_state() -> ClientState {
-        let cfg = dnsless_client::config::ClientConfig::default();
-        ClientState::new(&cfg)
+        ClientState::new("127.0.0.1:5353".into(), "/etc/hosts".into())
     }
 
     #[test]

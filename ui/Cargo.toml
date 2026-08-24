@@ -7,14 +7,15 @@ edition = "2021"
 name = "dnsless-ui"
 path = "src/main.rs"
 
+# wasm-safe deps: `state`/`event`/`views` only need egui + dnsless-common.
 [dependencies]
 dnsless-common = { path = "../common" }
-dnsless-server = { path = "../server" }
-dnsless-client = { path = "../client" }
 egui = "0.29"
-eframe = "0.29"
-log = "0.4"
-env_logger = "0.11"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
-[dev-dependencies]
+# native-only deps: the app/net shell and the CLI binary.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+eframe = "0.29"
+dnsless-server = { path = "../server" }
+dnsless-client = { path = "../client" }
+env_logger = "0.11"

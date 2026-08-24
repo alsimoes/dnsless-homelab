@@ -15,38 +15,10 @@ use log::{error, info, warn};
 pub mod config;
 pub mod hosts;
 
+pub use dnsless_common::ClientEvent;
+
 use config::ClientConfig;
 use hosts::update_hosts_entry;
-
-/// Observability event emitted by [`run_with_events`] when an event
-/// channel is supplied.  Lives here — not in `dnsless_common` — so the
-/// wire protocol stays untouched.
-#[derive(Debug, Clone)]
-pub enum ClientEvent {
-    /// Attempting to connect to the configured server.
-    Connecting { server_addr: String },
-    /// TCP connection to the server succeeded.
-    Connected { server_addr: String },
-    /// Connection lost (read error or EOF); will reconnect after delay.
-    ConnectionLost { server_addr: String },
-    /// Connection attempt failed; will retry after delay.
-    ConnectionFailed { server_addr: String, error: String },
-    /// An IP-update message was received from the server.
-    IpUpdateReceived { hostname: String, ip: String },
-    /// The hosts file was successfully updated.
-    HostsFileUpdated { hostname: String, ip: String },
-    /// The hosts file update FAILED (typically: permission denied — see
-    /// restrição 6).  The UI must surface this prominently; never swallow it.
-    HostsFileError {
-        hostname: String,
-        ip: String,
-        error: String,
-    },
-    /// A heartbeat was received (connection still alive).
-    HeartbeatReceived,
-    /// A message from the server could not be parsed.
-    ParseError { raw: String, error: String },
-}
 
 /// Emit an event on the optional channel.  A closed receiver (UI gone)
 /// is not an error worth panicking over: the CLI keeps running.
