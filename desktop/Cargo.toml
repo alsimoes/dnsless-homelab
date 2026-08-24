@@ -1,0 +1,24 @@
+[package]
+name = "dnsless-desktop"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "dnsless-desktop"
+path = "src/main.rs"
+
+[dependencies]
+dnsless-common  = { path = "../common" }
+dnsless-ui      = { path = "../ui" }
+dnsless-client  = { path = "../client" }
+eframe          = "0.29"
+egui            = "0.29"
+tray-icon       = { version = "0.21", default-features = false }
+image           = { version = "0.25", default-features = false, features = ["png"] }
+log             = "0.4"
+env_logger      = "0.11"
+
+# tray-icon on Linux requires GTK for the StatusNotifierItem/AppIndicator
+# backend; gtk::init() is called from tray.rs before building the icon.
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"

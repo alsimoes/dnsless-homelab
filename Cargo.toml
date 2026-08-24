@@ -5,5 +5,6 @@ members = [
     "client",
     "ui",
     "web",
+    "desktop",
 ]
 resolver = "2"
