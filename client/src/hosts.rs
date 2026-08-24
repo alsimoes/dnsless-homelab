@@ -73,10 +73,7 @@ fn replace_or_append(original: &str, hostname: &str, ip: &str) -> String {
 
     let new_block = format!("{begin}\n{ip} {hostname}\n{end}\n");
 
-    if let (Some(start), Some(stop)) = (
-        original.find(&begin),
-        original.find(&end),
-    ) {
+    if let (Some(start), Some(stop)) = (original.find(&begin), original.find(&end)) {
         // Replace existing block (inclusive of the end marker + newline).
         let after_end = stop + end.len();
         // Consume the trailing newline if present.
